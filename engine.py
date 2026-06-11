@@ -22,7 +22,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
                     clip_mode: str = 'norm',
                     model_ema: Optional[ModelEma] = None, mixup_fn: Optional[Mixup] = None,
                     set_training_mode=True,
-                    set_bn_eval=False,):
+                    set_bn_eval=False,
+                    gpu_transform=None):
     model.train(set_training_mode)
     if set_bn_eval:
         set_bn_state(model)
@@ -36,6 +37,11 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
             data_loader, print_freq, header):
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
+
+        # GPU augmentation: RandAugment + normalize + random erase on GPU
+        # (replaces the CPU PIL equivalents; input is uint8, output is float32)
+        if gpu_transform is not None:
+            samples = gpu_transform(samples)
 
         if mixup_fn is not None:
             samples, targets = mixup_fn(samples, targets)

@@ -258,6 +258,50 @@ def main(args):
     dataset_train, args.nb_classes = build_dataset(is_train=True, args=args)
     dataset_val, _ = build_dataset(is_train=False, args=args)
 
+    # ---------------------------------------------------------------------------
+    # GPU Augmentation Setup
+    # ---------------------------------------------------------------------------
+    # Training logs show ~0.9s data time per batch (60% of iteration wall-time)
+    # with only ~2.4 GB of 16 GB T4 VRAM used.  The bottleneck is CPU PIL
+    # RandAugment (~3–6 ms/image × batch, across 4 workers).
+    #
+    # Strategy: keep only fast spatial ops on CPU (RandomResizedCrop + Flip +
+    # PILToTensor→uint8).  Move RandAugment, Normalize, and RandomErasing to
+    # the GPU inside train_one_epoch, running concurrently with the CPU workers
+    # pre-fetching the next batch.
+    #
+    # Excluded from GPU migration:
+    #   • ThreeAugment — uses custom PIL GaussianBlur/Solarization ops
+    #   • CIFAR-scale (input_size ≤ 32) — uses RandomCrop, not RandomResizedCrop
+    # ---------------------------------------------------------------------------
+    gpu_train_transform = None
+    if not args.ThreeAugment and args.input_size > 32:
+        try:
+            from data.gpu_augment import (
+                gpu_aug_available,
+                build_cpu_minimal_train_transform,
+                GPUTrainAugment,
+            )
+            if gpu_aug_available() and hasattr(dataset_train, 'transform'):
+                # Replace the heavy CPU transform with the minimal spatial-only version.
+                # Must be done BEFORE DataLoader is constructed (persistent_workers).
+                dataset_train.transform = build_cpu_minimal_train_transform(args)
+                # Build GPU augmentation module on the training device.
+                gpu_train_transform = GPUTrainAugment(args).to(device)
+                if utils.is_main_process():
+                    print(
+                        "[GPU Aug] Enabled: RandAugment + Normalize + RandomErasing "
+                        "migrated to GPU.  DataLoader now emits uint8 tensors."
+                    )
+            else:
+                if utils.is_main_process():
+                    print("[GPU Aug] Skipped: prerequisites not met (CUDA or v2 unavailable, "
+                          "or dataset has no .transform attribute).")
+        except Exception as e:
+            if utils.is_main_process():
+                print(f"[GPU Aug] Setup failed ({e}); falling back to CPU transform pipeline.")
+
+
     if True:  # args.distributed:
         num_tasks = utils.get_world_size()
         global_rank = utils.get_rank()
@@ -458,6 +502,7 @@ def main(args):
             # set_training_mode=args.finetune == ''  # keep in eval mode during finetuning
             set_training_mode=True,
             set_bn_eval=args.set_bn_eval, # set bn to eval if finetune
+            gpu_transform=gpu_train_transform,
         )
 
         lr_scheduler.step(epoch)
