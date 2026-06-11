@@ -47,32 +47,42 @@ def gpu_aug_available() -> bool:
         return False
 
 
-def build_cpu_minimal_train_transform(args):
-    """Return a minimal CPU transform for use inside the DataLoader.
+class EnsureTensorAndCrop:
+    """A minimal CPU transform wrapper that handles both PIL Images and PyTorch Tensors.
 
-    Performs only the spatial and layout operations that must happen on the CPU
-    (PIL input, variable image size):
-      1. RandomResizedCrop  — bicubic, matches original `create_transform` policy
-      2. RandomHorizontalFlip — independent per image (called once per PIL sample)
-      3. PILToTensor          — converts PIL → uint8 CUDA-transferable tensor [0,255]
-
-    RandAugment, normalization, and RandomErasing are deferred to GPUTrainAugment.
-
-    Args:
-        args: training argument namespace (args.input_size used for crop size).
-
-    Returns:
-        torchvision.transforms.Compose outputting uint8 tensors [C, H, W] in [0,255].
+    If the input is a PIL Image, it applies crop, flip, and converts it to a uint8 tensor.
+    If the input is already a PyTorch tensor (from OpenCV), it applies crop and flip directly
+    on the tensor using torchvision v2, avoiding PIL wrapping overhead.
     """
-    return T.Compose([
-        T.RandomResizedCrop(
+    def __init__(self, args):
+        import torchvision.transforms.v2 as v2
+        self.crop = v2.RandomResizedCrop(
             args.input_size,
             scale=(0.08, 1.0),
-            interpolation=InterpolationMode.BICUBIC,
-        ),
-        T.RandomHorizontalFlip(0.5),
-        T.PILToTensor(),  # → uint8 [C, H, W] in [0, 255]; no normalization
-    ])
+            interpolation=v2.InterpolationMode.BICUBIC,
+        )
+        self.flip = v2.RandomHorizontalFlip(0.5)
+        self.to_tensor = v2.PILToTensor()
+
+    def __call__(self, img):
+        from PIL import Image
+        if isinstance(img, Image.Image):
+            img = self.crop(img)
+            img = self.flip(img)
+            img = self.to_tensor(img)
+        elif isinstance(img, torch.Tensor):
+            img = self.crop(img)
+            img = self.flip(img)
+        else:
+            img = self.to_tensor(img)
+            img = self.crop(img)
+            img = self.flip(img)
+        return img
+
+
+def build_cpu_minimal_train_transform(args):
+    """Return a minimal CPU transform for use inside the DataLoader."""
+    return EnsureTensorAndCrop(args)
 
 
 class GPUTrainAugment(nn.Module):

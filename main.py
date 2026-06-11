@@ -167,7 +167,7 @@ def get_args_parser():
                         help='Perform evaluation only')
     parser.add_argument('--dist-eval', action='store_true',
                         default=True, help='Enabling distributed evaluation')
-    parser.add_argument('--num_workers', default=4, type=int)
+    parser.add_argument('--num_workers', default=6, type=int)
     parser.add_argument('--pin-mem', action='store_true',
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no-pin-mem', action='store_false', dest='pin_mem',
@@ -333,7 +333,7 @@ def main(args):
         pin_memory=args.pin_mem,
         drop_last=True,
         persistent_workers=True,
-        prefetch_factor=2,
+        prefetch_factor=3,
     )
 
     if args.ThreeAugment:
@@ -346,7 +346,7 @@ def main(args):
         pin_memory=args.pin_mem,
         drop_last=False,
         persistent_workers=True,
-        prefetch_factor=2,
+        prefetch_factor=3,
     )
 
     mixup_fn = None

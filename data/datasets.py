@@ -105,7 +105,18 @@ class KaggleImageNetDataset(Dataset):
 
         path, target = self.samples[idx]
 
-        img = Image.open(path).convert("RGB")
+        img = None
+        try:
+            import cv2
+            img_cv = cv2.imread(path, cv2.IMREAD_COLOR)
+            if img_cv is not None:
+                img_cv = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB)
+                img = torch.from_numpy(img_cv).permute(2, 0, 1)  # uint8 tensor [C, H, W]
+        except Exception:
+            pass
+
+        if img is None:
+            img = Image.open(path).convert("RGB")
 
         if self.transform:
             img = self.transform(img)
