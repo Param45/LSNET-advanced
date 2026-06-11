@@ -83,25 +83,21 @@ class GPUTrainAugment(nn.Module):
 
     Pipeline per batch
     ------------------
-    1. RandAugment(num_ops=2, magnitude=9)  — applied per-image, independently
+    1. RandAugment(num_ops=2, magnitude=9)  — applied in groups of 8
        Matches `--aa rand-m9-mstd0.5-inc1` policy (num_ops=2, same op set and magnitude).
     2. uint8 → float32 / 255.0              — in-place, batch-level, O(1) overhead
     3. Normalize(ImageNet mean, std)        — batch-level, highly efficient on GPU
-    4. RandomErasing(p=reprob, value=random)— applied per-image, independently
+    4. RandomErasing(p=reprob, value=random)— applied in groups of 8
        Matches `--reprob` and `--remode pixel` (random pixel fill).
 
-    Per-image loop rationale
+    Grouped batch rationale
     ------------------------
-    torchvision.transforms.v2, when called on a 4-D batch tensor, applies the same
-    random parameters to every image in the batch (designed for segmentation consistency).
-    For classification training, each image must receive independently drawn augmentations
-    to maintain augmentation diversity.  The per-image loop preserves this while still
-    running each kernel on the GPU.
-
-    GPU throughput
-    --------------
-    On a T4, each 224×224 RandAugment call takes ~0.3–0.5 ms.  For a batch of 128:
-      GPU: 128 × ~0.4 ms ≈ 51 ms  (replaces ~900 ms CPU DataLoader wait).
+    torchvision.transforms.v2, when called on a batch tensor, applies the same random
+    parameters to all images in that batch. To preserve sample diversity without incurring
+    severe Python loop and kernel launch overhead from looping over 128 images individually
+    (which starves the CPU and restricts GPU utilization), we split the batch into groups
+    of size 8. Each group gets independently drawn random parameters, reducing the loop
+    iterations from 128 to 16.
     """
 
     def __init__(self, args):
@@ -133,10 +129,10 @@ class GPUTrainAugment(nn.Module):
         Returns:
             float32 CUDA tensor [B, C, H, W] normalized to ImageNet statistics
         """
-        # --- Step 1: RandAugment, independently per sample ---
-        # Loop preserves per-image stochastic independence.
-        # Each call to self.rand_aug(xi) draws fresh random op choices for xi.
-        x = torch.stack([self.rand_aug(xi) for xi in x])  # uint8 [B, C, H, W]
+        # --- Step 1: RandAugment, grouped (split-batch) to reduce CPU/kernel overhead ---
+        # Splitting into groups of 8 reduces loop iterations (e.g. 128 -> 16),
+        # keeping Python overhead minimal while maintaining sample diversity.
+        x = torch.cat([self.rand_aug(chunk) for chunk in torch.split(x, 8, dim=0)], dim=0)
 
         # --- Step 2: uint8 [0,255] → float32 [0.0, 1.0] ---
         # div_ is in-place and avoids an extra allocation.
@@ -145,8 +141,8 @@ class GPUTrainAugment(nn.Module):
         # --- Step 3: Normalize to ImageNet mean / std (batch op, very fast) ---
         x = self.normalize(x)
 
-        # --- Step 4: RandomErasing, independently per sample ---
+        # --- Step 4: RandomErasing, grouped (split-batch) ---
         if self.random_erase is not None:
-            x = torch.stack([self.random_erase(xi) for xi in x])
+            x = torch.cat([self.random_erase(chunk) for chunk in torch.split(x, 8, dim=0)], dim=0)
 
         return x
