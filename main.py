@@ -167,7 +167,7 @@ def get_args_parser():
                         help='Perform evaluation only')
     parser.add_argument('--dist-eval', action='store_true',
                         default=True, help='Enabling distributed evaluation')
-    parser.add_argument('--num_workers', default=3, type=int)
+    parser.add_argument('--num_workers', default=8, type=int)
     parser.add_argument('--pin-mem', action='store_true',
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no-pin-mem', action='store_false', dest='pin_mem',
