@@ -140,9 +140,9 @@ class GPUTrainAugment(nn.Module):
             float32 CUDA tensor [B, C, H, W] normalized to ImageNet statistics
         """
         # --- Step 1: RandAugment, grouped (split-batch) to reduce CPU/kernel overhead ---
-        # Splitting into groups of 8 reduces loop iterations (e.g. 128 -> 16),
+        # Splitting into groups of 32 reduces loop iterations (e.g. 256 -> 8),
         # keeping Python overhead minimal while maintaining sample diversity.
-        x = torch.cat([self.rand_aug(chunk) for chunk in torch.split(x, 8, dim=0)], dim=0)
+        x = torch.cat([self.rand_aug(chunk) for chunk in torch.split(x, 32, dim=0)], dim=0)
 
         # --- Step 2: uint8 [0,255] → float32 [0.0, 1.0] ---
         # div_ is in-place and avoids an extra allocation.
@@ -153,6 +153,6 @@ class GPUTrainAugment(nn.Module):
 
         # --- Step 4: RandomErasing, grouped (split-batch) ---
         if self.random_erase is not None:
-            x = torch.cat([self.random_erase(chunk) for chunk in torch.split(x, 8, dim=0)], dim=0)
+            x = torch.cat([self.random_erase(chunk) for chunk in torch.split(x, 32, dim=0)], dim=0)
 
         return x
