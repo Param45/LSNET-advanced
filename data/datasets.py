@@ -105,13 +105,16 @@ class KaggleImageNetDataset(Dataset):
 
         path, target = self.samples[idx]
 
+        # Decode with OpenCV (faster C++ JPEG decoder), fall back to PIL.
+        # Always return a PIL Image for compatibility with all transforms
+        # (training EnsureTensorAndCrop and validation ToTensor both accept PIL).
         img = None
         try:
             import cv2
             img_cv = cv2.imread(path, cv2.IMREAD_COLOR)
             if img_cv is not None:
                 img_cv = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB)
-                img = torch.from_numpy(img_cv).permute(2, 0, 1)  # uint8 tensor [C, H, W]
+                img = Image.fromarray(img_cv)
         except Exception:
             pass
 
