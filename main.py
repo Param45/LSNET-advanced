@@ -167,7 +167,7 @@ def get_args_parser():
                         help='Perform evaluation only')
     parser.add_argument('--dist-eval', action='store_true',
                         default=True, help='Enabling distributed evaluation')
-    parser.add_argument('--num_workers', default=4, type=int)
+    parser.add_argument('--num_workers', default=8, type=int)
     parser.add_argument('--pin-mem', action='store_true',
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no-pin-mem', action='store_false', dest='pin_mem',
@@ -181,6 +181,8 @@ def get_args_parser():
                         help='url used to set up distributed training')
     parser.add_argument('--save_freq', default=5, type=int,
                         help='frequency of model saving')
+    parser.add_argument('--eval_freq', default=5, type=int,
+                        help='frequency of validation evaluation (always evaluates last 10 epochs)')
     
     parser.add_argument('--deploy', action='store_true', default=False)
     parser.add_argument('--project', default='lsnet', type=str)
@@ -397,7 +399,9 @@ def main(args):
     model_without_ddp = model
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(
-            model, device_ids=[args.gpu])
+            model, device_ids=[args.gpu],
+            gradient_as_bucket_view=True,
+            static_graph=True)
         model_without_ddp = model.module
     n_parameters = sum(p.numel()
                        for p in model.parameters() if p.requires_grad)
@@ -507,9 +511,19 @@ def main(args):
 
         lr_scheduler.step(epoch)
 
-        test_stats = evaluate(data_loader_val, model, device)
-        print(
-            f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
+        # Evaluate every eval_freq epochs, and always evaluate in the last 10 epochs.
+        # This saves significant wall time (each val pass takes 2-3 min) while ensuring
+        # best-checkpoint tracking is accurate when it matters most.
+        is_last_10 = (epoch >= args.epochs - 10)
+        should_eval = ((epoch + 1) % args.eval_freq == 0) or is_last_10 or (epoch == args.epochs - 1)
+        
+        if should_eval:
+            test_stats = evaluate(data_loader_val, model, device)
+            print(
+                f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
+        else:
+            test_stats = {'acc1': 0.0, 'acc5': 0.0, 'loss': 0.0}
+            print(f"Skipping validation at epoch {epoch} (eval_freq={args.eval_freq})")
         
         if args.output_dir and ((epoch + 1) % args.save_freq == 0 or epoch == args.epochs - 1):
             ckpt_path = os.path.join(output_dir, 'checkpoint_'+str(epoch)+'.pth')
@@ -531,7 +545,7 @@ def main(args):
                 if os.path.exists(old_ckpt):
                     os.remove(old_ckpt)
 
-        if max_accuracy < test_stats["acc1"]:
+        if should_eval and max_accuracy < test_stats["acc1"]:
             utils.save_on_master({
                     'model': model_without_ddp.state_dict(),
                     'optimizer': optimizer.state_dict(),
@@ -541,7 +555,8 @@ def main(args):
                     'scaler': loss_scaler.state_dict(),
                     'args': args,
                 }, os.path.join(output_dir, 'checkpoint_best.pth'))
-        max_accuracy = max(max_accuracy, test_stats["acc1"])
+        if should_eval:
+            max_accuracy = max(max_accuracy, test_stats["acc1"])
         
         print(f'Max accuracy: {max_accuracy:.2f}%')
         

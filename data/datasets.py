@@ -12,6 +12,12 @@ from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from timm.data import create_transform
 
 try:
+    import cv2
+    _HAS_CV2 = True
+except ImportError:
+    _HAS_CV2 = False
+
+try:
     from timm.data import TimmDatasetTar
 except ImportError:
     # for higher version of timm
@@ -109,14 +115,11 @@ class KaggleImageNetDataset(Dataset):
         # Always return a PIL Image for compatibility with all transforms
         # (training EnsureTensorAndCrop and validation ToTensor both accept PIL).
         img = None
-        try:
-            import cv2
+        if _HAS_CV2:
             img_cv = cv2.imread(path, cv2.IMREAD_COLOR)
             if img_cv is not None:
                 img_cv = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB)
                 img = Image.fromarray(img_cv)
-        except Exception:
-            pass
 
         if img is None:
             img = Image.open(path).convert("RGB")
