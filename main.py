@@ -44,6 +44,8 @@ def get_args_parser():
     parser.set_defaults(model_ema=True)
     parser.add_argument('--model-ema-decay', type=float,
                         default=0.99996, help='')
+    parser.add_argument('--model-ema-steps', type=int, default=8,
+                        help='Update model EMA every N optimizer steps; decay is adjusted to preserve the EMA time constant.')
     parser.add_argument('--model-ema-force-cpu',
                         action='store_true', default=False, help='')
 
@@ -181,6 +183,9 @@ def get_args_parser():
                         help='url used to set up distributed training')
     parser.add_argument('--save_freq', default=5, type=int,
                         help='frequency of model saving')
+    parser.add_argument('--no-fused-adamw', action='store_false', dest='fused_adamw',
+                        help='Disable PyTorch fused AdamW when available.')
+    parser.set_defaults(fused_adamw=True)
     
     parser.add_argument('--deploy', action='store_true', default=False)
     parser.add_argument('--project', default='lsnet', type=str)
@@ -410,6 +415,14 @@ def main(args):
     linear_scaled_lr = args.lr * args.batch_size * utils.get_world_size() / 512.0
     args.lr = linear_scaled_lr
     optimizer = create_optimizer(args, model_without_ddp)
+    if args.fused_adamw and isinstance(optimizer, torch.optim.AdamW) and device.type == 'cuda':
+        for group in optimizer.param_groups:
+            group['fused'] = True
+            group['foreach'] = None
+        optimizer.defaults['fused'] = True
+        optimizer.defaults['foreach'] = None
+        if utils.is_main_process():
+            print("[Optimizer] Enabled fused AdamW step.")
     loss_scaler = NativeScaler()
 
     lr_scheduler, _ = create_scheduler(args, optimizer)
@@ -507,6 +520,7 @@ def main(args):
             set_training_mode=True,
             set_bn_eval=args.set_bn_eval, # set bn to eval if finetune
             gpu_transform=gpu_train_transform,
+            model_ema_steps=args.model_ema_steps,
         )
 
         lr_scheduler.step(epoch)

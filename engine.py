@@ -45,6 +45,8 @@ class CudaPrefetcher:
             torch.cuda.current_stream(self.device).wait_stream(stream)
             samples, targets = next_samples, next_targets
             next_samples, next_targets = preload()
+            samples.record_stream(torch.cuda.current_stream(self.device))
+            targets.record_stream(torch.cuda.current_stream(self.device))
             yield samples, targets
 
 
@@ -61,10 +63,16 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
                     model_ema: Optional[ModelEma] = None, mixup_fn: Optional[Mixup] = None,
                     set_training_mode=True,
                     set_bn_eval=False,
-                    gpu_transform=None):
+                    gpu_transform=None,
+                    model_ema_steps: int = 1):
     model.train(set_training_mode)
     if set_bn_eval:
         set_bn_state(model)
+    model_ema_steps = max(1, int(model_ema_steps))
+    if model_ema is not None and model_ema_steps > 1:
+        if not hasattr(model_ema, "_base_decay"):
+            model_ema._base_decay = model_ema.decay
+        model_ema.decay = model_ema._base_decay ** model_ema_steps
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(
         window_size=1, fmt='{value:.6f}'))
@@ -101,7 +109,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         loss_scaler(loss, optimizer, clip_grad=clip_grad, clip_mode=clip_mode,
                     parameters=model.parameters(), create_graph=is_second_order)
 
-        if model_ema is not None:
+        if model_ema is not None and (step + 1) % model_ema_steps == 0:
             model_ema.update(model)
 
         if step % print_freq == 0 or step == num_steps - 1:
