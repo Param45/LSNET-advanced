@@ -27,6 +27,15 @@ from model import build
 import utils
 
 
+def shutdown_persistent_workers(data_loader):
+    iterator = getattr(data_loader, "_iterator", None)
+    if iterator is not None:
+        shutdown = getattr(iterator, "_shutdown_workers", None)
+        if shutdown is not None:
+            shutdown()
+        data_loader._iterator = None
+
+
 def get_args_parser():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--batch-size', default=512, type=int)
@@ -280,23 +289,29 @@ def main(args):
     #   • CIFAR-scale (input_size ≤ 32) — uses RandomCrop, not RandomResizedCrop
     # ---------------------------------------------------------------------------
     gpu_train_transform = None
+    gpu_eval_transform = None
     if not args.ThreeAugment and args.input_size > 32:
         try:
             from data.gpu_augment import (
                 gpu_aug_available,
                 build_cpu_minimal_train_transform,
+                build_cpu_uint8_eval_transform,
                 GPUTrainAugment,
+                GPUEvalNormalize,
             )
             if gpu_aug_available() and hasattr(dataset_train, 'transform'):
                 # Replace the heavy CPU transform with the minimal spatial-only version.
                 # Must be done BEFORE DataLoader is constructed (persistent_workers).
                 dataset_train.transform = build_cpu_minimal_train_transform(args)
+                if hasattr(dataset_val, 'transform'):
+                    dataset_val.transform = build_cpu_uint8_eval_transform(args)
                 # Build GPU augmentation module on the training device.
                 gpu_train_transform = GPUTrainAugment(args).to(device)
+                gpu_eval_transform = GPUEvalNormalize().to(device)
                 if utils.is_main_process():
                     print(
                         "[GPU Aug] Enabled: RandAugment + Normalize + RandomErasing "
-                        "migrated to GPU.  DataLoader now emits uint8 tensors."
+                        "migrated to GPU.  Train/eval DataLoaders now emit uint8 tensors."
                     )
             else:
                 if utils.is_main_process():
@@ -350,8 +365,8 @@ def main(args):
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
         drop_last=False,
-        persistent_workers=True,
-        prefetch_factor=3,
+        persistent_workers=False,
+        prefetch_factor=1,
     )
 
     mixup_fn = None
@@ -498,7 +513,7 @@ def main(args):
     if args.eval:
         utils.replace_batchnorm(model) # Users may choose whether to merge Conv-BN layers during eval
         print(f"Evaluating model: {args.model}")
-        test_stats = evaluate(data_loader_val, model, device)
+        test_stats = evaluate(data_loader_val, model, device, gpu_transform=gpu_eval_transform)
         print(
             f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
         robust_eval(args, model, device)
@@ -525,7 +540,8 @@ def main(args):
 
         lr_scheduler.step(epoch)
 
-        test_stats = evaluate(data_loader_val, model, device)
+        shutdown_persistent_workers(data_loader_train)
+        test_stats = evaluate(data_loader_val, model, device, gpu_transform=gpu_eval_transform)
         print(
             f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
         

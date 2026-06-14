@@ -126,7 +126,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
 
 
 @torch.no_grad()
-def evaluate(data_loader, model, device):
+def evaluate(data_loader, model, device, gpu_transform=None):
     criterion = torch.nn.CrossEntropyLoss()
 
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -138,6 +138,8 @@ def evaluate(data_loader, model, device):
     for images, target in metric_logger.log_every(data_loader, 10, header):
         images = images.to(device, non_blocking=True)
         target = target.to(device, non_blocking=True)
+        if gpu_transform is not None:
+            images = gpu_transform(images)
 
         # compute output
         with torch.amp.autocast(enabled=True, dtype=torch.float16, device_type="cuda"):

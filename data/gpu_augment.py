@@ -85,6 +85,60 @@ def build_cpu_minimal_train_transform(args):
     return EnsureTensorAndCrop(args)
 
 
+def build_cpu_uint8_eval_transform(args):
+    """Return eval transforms that keep batches uint8 until they reach CUDA."""
+    return EnsureEvalUint8(args)
+
+
+class EnsureEvalUint8:
+    """Eval resize/crop that accepts PIL images or uint8 tensors."""
+
+    def __init__(self, args):
+        import torchvision.transforms.v2 as v2
+
+        transforms = []
+        if args.finetune:
+            transforms.append(
+                v2.Resize(
+                    (args.input_size, args.input_size),
+                    interpolation=v2.InterpolationMode.BICUBIC,
+                )
+            )
+        elif args.input_size > 32:
+            size = int((256 / 224) * args.input_size)
+            transforms.extend([
+                v2.Resize(size, interpolation=v2.InterpolationMode.BICUBIC),
+                v2.CenterCrop(args.input_size),
+            ])
+        self.transform = v2.Compose(transforms)
+        self.to_tensor = v2.PILToTensor()
+
+    def __call__(self, img):
+        from PIL import Image
+
+        img = self.transform(img)
+        if isinstance(img, Image.Image):
+            img = self.to_tensor(img)
+        return img
+
+
+class GPUEvalNormalize(nn.Module):
+    """Convert uint8 eval batches to normalized float tensors on CUDA."""
+
+    def __init__(self):
+        super().__init__()
+        import torchvision.transforms.v2 as v2
+
+        self.normalize = v2.Normalize(
+            mean=list(IMAGENET_DEFAULT_MEAN),
+            std=list(IMAGENET_DEFAULT_STD),
+        )
+
+    @torch.no_grad()
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.normalize(x.float().div_(255.0))
+
+
 class GPUTrainAugment(nn.Module):
     """GPU-side stochastic augmentation applied inside the training loop.
 
