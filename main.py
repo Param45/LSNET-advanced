@@ -269,8 +269,12 @@ def main(args):
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
 
-    dataset_train, args.nb_classes = build_dataset(is_train=True, args=args)
-    dataset_val, _ = build_dataset(is_train=False, args=args)
+    if args.eval:
+        dataset_val, args.nb_classes = build_dataset(is_train=False, args=args)
+        dataset_train = None
+    else:
+        dataset_train, args.nb_classes = build_dataset(is_train=True, args=args)
+        dataset_val, _ = build_dataset(is_train=False, args=args)
 
     # ---------------------------------------------------------------------------
     # GPU Augmentation Setup
@@ -299,14 +303,17 @@ def main(args):
                 GPUTrainAugment,
                 GPUEvalNormalize,
             )
-            if gpu_aug_available() and hasattr(dataset_train, 'transform'):
+            has_train_transform = dataset_train is not None and hasattr(dataset_train, 'transform')
+            has_eval_transform = dataset_val is not None and hasattr(dataset_val, 'transform')
+            if gpu_aug_available() and (has_train_transform or has_eval_transform):
                 # Replace the heavy CPU transform with the minimal spatial-only version.
                 # Must be done BEFORE DataLoader is constructed (persistent_workers).
-                dataset_train.transform = build_cpu_minimal_train_transform(args)
-                if hasattr(dataset_val, 'transform'):
+                if has_train_transform:
+                    dataset_train.transform = build_cpu_minimal_train_transform(args)
+                    gpu_train_transform = GPUTrainAugment(args).to(device)
+                if has_eval_transform:
                     dataset_val.transform = build_cpu_uint8_eval_transform(args)
                 # Build GPU augmentation module on the training device.
-                gpu_train_transform = GPUTrainAugment(args).to(device)
                 gpu_eval_transform = GPUEvalNormalize().to(device)
                 if utils.is_main_process():
                     print(
@@ -325,14 +332,15 @@ def main(args):
     if True:  # args.distributed:
         num_tasks = utils.get_world_size()
         global_rank = utils.get_rank()
-        if args.repeated_aug:
-            sampler_train = RASampler(
-                dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
-            )
-        else:
-            sampler_train = torch.utils.data.DistributedSampler(
-                dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
-            )
+        if not args.eval:
+            if args.repeated_aug:
+                sampler_train = RASampler(
+                    dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
+                )
+            else:
+                sampler_train = torch.utils.data.DistributedSampler(
+                    dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
+                )
         if args.dist_eval:
             if len(dataset_val) % num_tasks != 0:
                 print('Warning: Enabling distributed evaluation with an eval dataset not divisible by process number. '
@@ -343,21 +351,23 @@ def main(args):
         else:
             sampler_val = torch.utils.data.SequentialSampler(dataset_val)
     else:
-        sampler_train = torch.utils.data.RandomSampler(dataset_train)
+        if not args.eval:
+            sampler_train = torch.utils.data.RandomSampler(dataset_train)
         sampler_val = torch.utils.data.SequentialSampler(dataset_val)
 
-    data_loader_train = torch.utils.data.DataLoader(
-        dataset_train, sampler=sampler_train,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        pin_memory=args.pin_mem,
-        drop_last=True,
-        persistent_workers=True,
-        prefetch_factor=3,
-    )
+    if not args.eval:
+        data_loader_train = torch.utils.data.DataLoader(
+            dataset_train, sampler=sampler_train,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=True,
+            persistent_workers=True,
+            prefetch_factor=3,
+        )
 
-    if args.ThreeAugment:
-        data_loader_train.dataset.transform = new_data_aug_generator(args)
+        if args.ThreeAugment:
+            data_loader_train.dataset.transform = new_data_aug_generator(args)
         
     data_loader_val = torch.utils.data.DataLoader(
         dataset_val, sampler=sampler_val,
