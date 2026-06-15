@@ -46,6 +46,8 @@ def get_args_parser():
                         help='Name of model to train')
     parser.add_argument('--input-size', default=224,
                         type=int, help='images input size')
+    parser.add_argument('--sparse-ska', action='store_true', default=False)
+    parser.add_argument('--sparse-top-k', type=int, default=5)
 
     parser.add_argument('--model-ema', action='store_true')
     parser.add_argument(
@@ -382,6 +384,8 @@ def main(args):
         args.model,
         num_classes=args.nb_classes,
         distillation=(args.distillation_type != 'none'),
+        sparse_ska=args.sparse_ska,
+        sparse_top_k=args.sparse_top_k,
     )
 
     if args.finetune:

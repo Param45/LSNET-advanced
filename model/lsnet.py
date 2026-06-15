@@ -4,7 +4,7 @@ import itertools
 from timm.models.vision_transformer import trunc_normal_
 from timm.models.layers import SqueezeExcite
 from timm.models.registry import register_model
-from .ska import SKA
+from .ska import SKA, SparseSKA
 
 from timm.models.helpers import build_model_with_cfg
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
@@ -196,10 +196,11 @@ class LKP(nn.Module):
         return w
 
 class LSConv(nn.Module):
-    def __init__(self, dim):
+    def __init__(self, dim, sparse_ska: bool = False,
+                 sparse_top_k: int = 5):
         super(LSConv, self).__init__()
         self.lkp = LKP(dim, lks=7, sks=3, groups=8)
-        self.ska = SKA()
+        self.ska = SparseSKA(top_k=sparse_top_k) if sparse_ska else SKA()
         self.bn = nn.BatchNorm2d(dim)
 
     def forward(self, x):
@@ -210,7 +211,9 @@ class Block(torch.nn.Module):
                  ed, kd, nh=8,
                  ar=4,
                  resolution=14,
-                 stage=-1, depth=-1):
+                 stage=-1, depth=-1,
+                 sparse_ska: bool = False,
+                 sparse_top_k: int = 5):
         super().__init__()
             
         if depth % 2 == 0:
@@ -221,7 +224,7 @@ class Block(torch.nn.Module):
             if stage == 3:
                 self.mixer = Residual(Attention(ed, kd, nh, ar, resolution=resolution))
             else:
-                self.mixer = LSConv(ed)
+                self.mixer = LSConv(ed, sparse_ska=sparse_ska, sparse_top_k=sparse_top_k)
 
         self.ffn = Residual(FFN(ed, int(ed * 2)))
 
@@ -237,7 +240,8 @@ class LSNet(torch.nn.Module):
                  key_dim=[16, 16, 16, 16],
                  depth=[1, 2, 3, 4],
                  num_heads=[4, 4, 4, 4],
-                 distillation=False,):
+                 distillation=False,
+                 **kwargs):
         super().__init__()
 
         resolution = img_size
@@ -257,7 +261,9 @@ class LSNet(torch.nn.Module):
         for i, (ed, kd, dpth, nh, ar) in enumerate(
                 zip(embed_dim, key_dim, depth, num_heads, attn_ratio)):
             for d in range(dpth):
-                blocks[i].append(Block(ed, kd, nh, ar, resolution, stage=i, depth=d))
+                blocks[i].append(Block(ed, kd, nh, ar, resolution, stage=i, depth=d,
+                                       sparse_ska=kwargs.get('sparse_ska', False),
+                                       sparse_top_k=kwargs.get('sparse_top_k', 5)))
             
             if i != len(depth) - 1:
                 blk = blocks[i+1]
@@ -356,7 +362,8 @@ def _create_lsnet(variant, pretrained=False, **kwargs):
     return model
 
 @register_model
-def lsnet_t(num_classes=1000, distillation=False, pretrained=False, **kwargs):
+def lsnet_t(num_classes=1000, distillation=False, pretrained=False,
+            sparse_ska=False, sparse_top_k=5, **kwargs):
     model = _create_lsnet("lsnet_t" + ("_distill" if distillation else ""),
                   pretrained=pretrained,
                   num_classes=num_classes, 
@@ -366,7 +373,9 @@ def lsnet_t(num_classes=1000, distillation=False, pretrained=False, **kwargs):
                   embed_dim=[64, 128, 256, 384],
                   depth=[0, 2, 8, 10],
                   num_heads=[3, 3, 3, 4],
-                  )
+                  sparse_ska=sparse_ska,
+                  sparse_top_k=sparse_top_k,
+                  **kwargs)
     return model
 
 @register_model

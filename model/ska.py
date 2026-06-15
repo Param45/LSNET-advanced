@@ -25,6 +25,7 @@ if tl is None:
 
 from torch.amp import custom_fwd, custom_bwd
 import math
+import torch.nn.functional as F
 
 def _grid(numel: int, bs: int) -> tuple:
     return (triton.cdiv(numel, bs),)
@@ -187,3 +188,61 @@ class SkaFn(Function):
 class SKA(torch.nn.Module):
     def forward(self, x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
         return SkaFn.apply(x, w) # type: ignore
+
+
+class SparsePyTorchSkaFn:
+    """
+    Sparse variant of SKA: zeroes out the (ks*ks - top_k) kernel
+    positions with smallest absolute value before aggregation.
+    top_k is applied per (batch, channel, spatial location).
+    Default top_k=5 out of 9 keeps the 5 most informative neighbours.
+    """
+
+    @staticmethod
+    def apply(x: torch.Tensor, w: torch.Tensor,
+              top_k: int = 5) -> torch.Tensor:
+        ks = int(math.sqrt(w.shape[2]))   # always 3 for LSNet-T
+        pad = (ks - 1) // 2              # always 1
+
+        n, ic, h, width = x.shape
+        wc = w.shape[1]
+
+        # --- identical to original up to the repeat ---
+        x_unfolded = F.unfold(x, kernel_size=ks, padding=pad)
+        x_unfolded = x_unfolded.view(n, ic, ks * ks, h * width)
+        w = w.view(n, wc, ks * ks, h * width)
+        if ic != wc:
+            repeats = ic // wc
+            w = w.repeat(1, repeats, 1, 1)
+
+        # --- sparsity mask: keep top_k positions per (n, c, hw) ---
+        # w shape: [n, ic, ks*ks, h*width]
+        # Compute threshold along dim=2 (kernel positions)
+        with torch.no_grad():
+            # abs_w: [n, ic, ks*ks, h*width]
+            abs_w = w.abs()
+            # topk returns values sorted descending; take index top_k-1
+            threshold = abs_w.topk(top_k, dim=2, largest=True,
+                                   sorted=True).values[..., -1:, :]
+            # mask: True where abs_w >= threshold (keep), False (zero)
+            mask = (abs_w >= threshold).float()
+
+        w = w * mask   # zero out bottom (ks*ks - top_k) positions
+
+        output = (x_unfolded * w).sum(dim=2)
+        output = output.view(n, ic, h, width)
+        return output
+
+
+class SparseSKA(torch.nn.Module):
+    """
+    Drop-in replacement for SKA that uses sparse aggregation.
+    top_k: number of kernel positions (out of KS*KS) to keep.
+           For KS=3, KS*KS=9. Recommended default: 5.
+    """
+    def __init__(self, top_k: int = 5):
+        super().__init__()
+        self.top_k = top_k
+
+    def forward(self, x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
+        return SparsePyTorchSkaFn.apply(x, w, self.top_k)
