@@ -205,6 +205,8 @@ def get_args_parser():
     parser.add_argument('--ina_path', type=str, default=None)
     parser.add_argument('--inr_path', type=str, default=None)
     parser.add_argument('--insk_path', type=str, default=None)
+    parser.add_argument('--dataset-fraction', type=float, default=1.0,
+                        help='fraction of dataset to use (default: 1.0)')
     return parser
 
 try:

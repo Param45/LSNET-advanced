@@ -65,7 +65,7 @@ from PIL import Image
 
 
 class KaggleImageNetDataset(Dataset):
-    def __init__(self, roots, transform=None):
+    def __init__(self, roots, transform=None, fraction: float = 1.0):
         self.transform = transform
         self.samples = []
 
@@ -81,22 +81,22 @@ class KaggleImageNetDataset(Dataset):
             for idx, cls_name in enumerate(classes)
         }
 
+        class_samples = {}
         for root in roots:
-
             for cls_name in os.listdir(root):
-
                 cls_dir = os.path.join(root, cls_name)
-
                 label = self.class_to_idx[cls_name]
-
+                if cls_name not in class_samples:
+                    class_samples[cls_name] = []
                 for fname in os.listdir(cls_dir):
+                    class_samples[cls_name].append((os.path.join(cls_dir, fname), label))
 
-                    self.samples.append(
-                        (
-                            os.path.join(cls_dir, fname),
-                            label
-                        )
-                    )
+        for cls_name in sorted(class_samples.keys()):
+            samples = sorted(class_samples[cls_name], key=lambda x: x[0])
+            if fraction < 1.0:
+                num_to_take = int(len(samples) * fraction)
+                samples = samples[:num_to_take]
+            self.samples.extend(samples)
 
     def __len__(self):
         return len(self.samples)
@@ -153,7 +153,8 @@ def build_dataset(is_train, args):
                         "/kaggle/input/datasets/sautkin/imagenet1k2",
                         "/kaggle/input/datasets/sautkin/imagenet1k3",
                     ],
-                    transform=transform
+                    transform=transform,
+                    fraction=getattr(args, 'dataset_fraction', 1.0)
                 )
 
             else:
@@ -162,7 +163,8 @@ def build_dataset(is_train, args):
                     roots=[
                         "/kaggle/input/datasets/sautkin/imagenet1kvalid"
                     ],
-                    transform=transform
+                    transform=transform,
+                    fraction=getattr(args, 'dataset_fraction', 1.0)
                 )
 
         else:
