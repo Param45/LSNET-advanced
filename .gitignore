@@ -143,3 +143,4 @@ wandb
 *.whl
 ignore
 lsnet_modification_guide.md
+Proposal3_first_try.txt
