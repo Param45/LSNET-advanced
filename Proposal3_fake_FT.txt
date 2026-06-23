@@ -1,0 +1,74 @@
+Epoch: [0]  [  0/499]  eta: 8:55:13  lr: 0.000001  loss: 4.8184 (4.8184)  time: 64.3556  data: 23.2562  max mem: 8551
+Epoch: [0]  [100/499]  eta: 0:18:10  lr: 0.000001  loss: 3.8537 (4.3361)  time: 2.3369  data: 0.0659  max mem: 8551
+Epoch: [0]  [200/499]  eta: 0:12:11  lr: 0.000001  loss: 3.8537 (3.9801)  time: 2.0874  data: 0.1113  max mem: 8551
+Epoch: [0]  [300/499]  eta: 0:07:36  lr: 0.000001  loss: 3.3977 (3.8345)  time: 1.8989  data: 0.0643  max mem: 8551
+Epoch: [0]  [400/499]  eta: 0:03:43  lr: 0.000001  loss: 3.6045 (3.7885)  time: 2.2705  data: 0.0797  max mem: 8551
+Epoch: [0]  [498/499]  eta: 0:00:02  lr: 0.000001  loss: 3.4751 (3.7362)  time: 1.5027  data: 0.0457  max mem: 8551
+Epoch: [0] Total time: 0:18:14 (2.1938 s / it)
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+return func(*args, **kwargs)
+Averaged stats: lr: 0.000001  loss: 3.4751 (3.6278)
+Test:  [ 0/10]  eta: 0:06:29  loss: 1.2448 (1.2448)  acc1: 75.7812 (75.7812)  acc5: 92.0898 (92.0898)  time: 38.9361  data: 30.3055  max mem: 8551
+Test:  [ 9/10]  eta: 0:00:06  loss: 1.3020 (1.4768)  acc1: 70.6055 (71.2600)  acc5: 88.4766 (89.6800)  time: 6.0814  data: 3.0308  max mem: 8551
+Test: Total time: 0:01:00 (6.0971 s / it)
+* Acc@1 71.110 Acc@5 89.945 loss 1.469
+Accuracy of the network on the 20000 test images: 71.1%
+Max accuracy: 71.11%
+Epoch: [1]  [  0/499]  eta: 2:19:17  lr: 0.000001  loss: 2.8073 (2.8073)  time: 16.7488  data: 14.4205  max mem: 8551
+Epoch: [1]  [100/499]  eta: 0:15:34  lr: 0.000001  loss: 2.8073 (3.2415)  time: 1.8382  data: 0.0860  max mem: 8551
+Epoch: [1]  [200/499]  eta: 0:10:45  lr: 0.000001  loss: 3.0703 (3.1844)  time: 1.8098  data: 0.0824  max mem: 8551
+Epoch: [1]  [300/499]  eta: 0:06:56  lr: 0.000001  loss: 3.0703 (3.2222)  time: 1.8871  data: 0.0865  max mem: 8551
+Epoch: [1]  [400/499]  eta: 0:03:24  lr: 0.000001  loss: 3.3356 (3.5023)  time: 1.9891  data: 0.0941  max mem: 8551
+Epoch: [1]  [498/499]  eta: 0:00:02  lr: 0.000001  loss: 3.3356 (3.5327)  time: 1.5035  data: 0.0471  max mem: 8551
+Epoch: [1] Total time: 0:16:53 (2.0313 s / it)
+Averaged stats: lr: 0.000001  loss: 3.3356 (3.5546)
+Test:  [ 0/10]  eta: 0:05:16  loss: 1.2138 (1.2138)  acc1: 76.1719 (76.1719)  acc5: 92.1875 (92.1875)  time: 31.6503  data: 29.4192  max mem: 8551
+Test:  [ 9/10]  eta: 0:00:05  loss: 1.2706 (1.4393)  acc1: 70.1172 (71.4100)  acc5: 89.0625 (89.9200)  time: 5.0124  data: 2.9422  max mem: 8551
+Test: Total time: 0:00:50 (5.0321 s / it)
+* Acc@1 71.390 Acc@5 90.030 loss 1.431
+Accuracy of the network on the 20000 test images: 71.4%
+Max accuracy: 71.39%
+Epoch: [2]  [  0/499]  eta: 2:10:47  lr: 0.000051  loss: 3.3303 (3.3303)  time: 15.7274  data: 13.9401  max mem: 8551
+Epoch: [2]  [100/499]  eta: 0:15:24  lr: 0.000051  loss: 2.4920 (2.9112)  time: 2.1778  data: 0.1218  max mem: 8551
+Epoch: [2]  [200/499]  eta: 0:10:52  lr: 0.000051  loss: 3.3303 (3.1112)  time: 2.0491  data: 0.1012  max mem: 8551
+Epoch: [2]  [300/499]  eta: 0:07:16  lr: 0.000051  loss: 3.3303 (3.2731)  time: 2.1945  data: 0.0953  max mem: 8551
+Epoch: [2]  [400/499]  eta: 0:03:32  lr: 0.000051  loss: 3.3303 (3.2189)  time: 1.9689  data: 0.1126  max mem: 8551
+Epoch: [2]  [498/499]  eta: 0:00:02  lr: 0.000051  loss: 3.0022 (3.1593)  time: 1.5091  data: 0.0454  max mem: 8551
+Epoch: [2] Total time: 0:17:26 (2.0979 s / it)
+Averaged stats: lr: 0.000051  loss: 3.0022 (3.2504)
+Test:  [ 0/10]  eta: 0:06:04  loss: 1.1117 (1.1117)  acc1: 76.8555 (76.8555)  acc5: 92.6758 (92.6758)  time: 36.4331  data: 34.3426  max mem: 8551
+Test:  [ 9/10]  eta: 0:00:05  loss: 1.1607 (1.3269)  acc1: 71.9727 (71.9800)  acc5: 89.7461 (90.4100)  time: 5.4854  data: 3.4345  max mem: 8551
+Test: Total time: 0:00:55 (5.5090 s / it)
+* Acc@1 71.920 Acc@5 90.665 loss 1.317
+Accuracy of the network on the 20000 test images: 71.9%
+Max accuracy: 71.92%
+Epoch: [3]  [  0/499]  eta: 2:42:18  lr: 0.000069  loss: 3.3509 (3.3509)  time: 19.5169  data: 16.9727  max mem: 8551
+Epoch: [3]  [100/499]  eta: 0:16:23  lr: 0.000069  loss: 3.3509 (3.4457)  time: 2.1490  data: 0.1425  max mem: 8551
+Epoch: [3]  [200/499]  eta: 0:11:15  lr: 0.000069  loss: 3.5405 (3.7359)  time: 2.2339  data: 0.1603  max mem: 8551
+Epoch: [3]  [300/499]  eta: 0:07:16  lr: 0.000069  loss: 3.5405 (3.7408)  time: 1.9892  data: 0.1117  max mem: 8551
+Epoch: [3]  [400/499]  eta: 0:03:36  lr: 0.000069  loss: 3.5405 (3.5412)  time: 2.1898  data: 0.1375  max mem: 8551
+Epoch: [3]  [498/499]  eta: 0:00:02  lr: 0.000069  loss: 3.5405 (3.5922)  time: 1.5004  data: 0.0461  max mem: 8551
+Epoch: [3] Total time: 0:17:49 (2.1441 s / it)
+Averaged stats: lr: 0.000069  loss: 3.5405 (3.5013)
+Test:  [ 0/10]  eta: 0:05:21  loss: 1.1583 (1.1583)  acc1: 76.7578 (76.7578)  acc5: 92.3828 (92.3828)  time: 32.1750  data: 29.9089  max mem: 8551
+Test:  [ 9/10]  eta: 0:00:05  loss: 1.1959 (1.3581)  acc1: 70.9961 (71.6900)  acc5: 89.3555 (90.4000)  time: 5.0550  data: 2.9911  max mem: 8551
+Test: Total time: 0:00:50 (5.0821 s / it)
+* Acc@1 71.850 Acc@5 90.565 loss 1.351
+Accuracy of the network on the 20000 test images: 71.8%
+Max accuracy: 71.92%
+Epoch: [4]  [  0/499]  eta: 3:06:50  lr: 0.000041  loss: 3.9067 (3.9067)  time: 22.4658  data: 19.9105  max mem: 8551
+Epoch: [4]  [100/499]  eta: 0:16:43  lr: 0.000041  loss: 2.3929 (3.1498)  time: 2.2467  data: 0.0821  max mem: 8551
+Epoch: [4]  [200/499]  eta: 0:11:35  lr: 0.000041  loss: 3.1841 (3.1612)  time: 2.0882  data: 0.1245  max mem: 8551
+Epoch: [4]  [300/499]  eta: 0:07:28  lr: 0.000041  loss: 3.1841 (3.4641)  time: 2.1366  data: 0.1250  max mem: 8551
+Epoch: [4]  [400/499]  eta: 0:03:39  lr: 0.000041  loss: 3.1841 (3.2345)  time: 2.1599  data: 0.1603  max mem: 8551
+Epoch: [4]  [498/499]  eta: 0:00:02  lr: 0.000041  loss: 3.1841 (3.2428)  time: 1.5015  data: 0.0466  max mem: 8551
+Epoch: [4] Total time: 0:18:12 (2.1891 s / it)
+Averaged stats: lr: 0.000041  loss: 3.1841 (3.4221)
+Test:  [ 0/10]  eta: 0:05:37  loss: 1.1764 (1.1764)  acc1: 76.3672 (76.3672)  acc5: 92.6758 (92.6758)  time: 33.7791  data: 31.6515  max mem: 8551
+Test:  [ 9/10]  eta: 0:00:05  loss: 1.2195 (1.3873)  acc1: 71.5820 (71.9600)  acc5: 89.2578 (90.3300)  time: 5.2912  data: 3.2379  max mem: 8551
+Test: Total time: 0:00:53 (5.3111 s / it)
+* Acc@1 71.980 Acc@5 90.535 loss 1.381
+Accuracy of the network on the 20000 test images: 72.0%
+Saving checkpoint to /kaggle/working/checkpoints/lsnet_t/2026_06_16_11_44_53/checkpoint_4.pth
+Max accuracy: 71.98%
+Training time 1:33:13
