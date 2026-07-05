@@ -212,7 +212,18 @@ def build_dataset(is_train, args):
         generator = torch.Generator()
         generator.manual_seed(42)
         indices = torch.randperm(n_total, generator=generator)[:n_keep].tolist()
-        dataset = torch.utils.data.Subset(dataset, indices)
+        if hasattr(dataset, 'samples'):
+            # Subsample the list in-place so the dataset object (and its
+            # .transform attribute) is preserved. This is critical: wrapping
+            # in torch.utils.data.Subset would hide .transform from the GPU
+            # augment setup in main.py, causing it to fall back to the PIL-
+            # expecting timm transform while cv2 still produces uint8 tensors.
+            dataset.samples = [dataset.samples[i] for i in indices]
+        else:
+            # Fallback for datasets that don't expose a .samples list
+            # (e.g. torchvision CIFAR). These don't use cv2 so the PIL
+            # mismatch is not a concern.
+            dataset = torch.utils.data.Subset(dataset, indices)
 
     return dataset, nb_classes
 
