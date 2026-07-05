@@ -203,6 +203,17 @@ def build_dataset(is_train, args):
         dataset = INatDataset(args.data_path, train=is_train, year=2019,
                               category=args.inat_category, transform=transform)
         nb_classes = dataset.nb_classes
+    # Apply dataset fraction (training split only)
+    fraction = getattr(args, 'dataset_fraction', 1.0)
+    if is_train and fraction < 1.0:
+        n_total = len(dataset)
+        n_keep = max(1, int(n_total * fraction))
+        # Fixed seed so the subset is reproducible across ranks
+        generator = torch.Generator()
+        generator.manual_seed(42)
+        indices = torch.randperm(n_total, generator=generator)[:n_keep].tolist()
+        dataset = torch.utils.data.Subset(dataset, indices)
+
     return dataset, nb_classes
 
 
