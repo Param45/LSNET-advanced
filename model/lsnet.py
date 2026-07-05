@@ -195,22 +195,74 @@ class LKP(nn.Module):
         w = w.view(b, self.dim // self.groups, self.sks ** 2, h, width)
         return w
 
+class GroupSE(nn.Module):
+    """
+    Per-group Squeeze-and-Excite.
+
+    Splits input tensor into G groups along the channel dimension,
+    applies independent SE recalibration to each group, then
+    concatenates back. Squeeze ratio is fixed at 4.
+
+    Args:
+        dim    : total number of channels (C)
+        groups : number of groups (G). Must divide dim exactly.
+                 For LSNet-T default: groups=8.
+    """
+    def __init__(self, dim: int, groups: int = 8):
+        super().__init__()
+        assert dim % groups == 0, \
+            f"dim ({dim}) must be divisible by groups ({groups})"
+        self.groups = groups
+        self.channels_per_group = dim // groups
+        reduced = max(1, self.channels_per_group // 4)  # squeeze ratio 4
+
+        # One FC pair per group, stored as groups x reduced conv
+        # We use a grouped 1x1 conv to process all groups in parallel
+        self.fc1 = nn.Conv2d(dim, reduced * groups,
+                             kernel_size=1, groups=groups, bias=True)
+        self.fc2 = nn.Conv2d(reduced * groups, dim,
+                             kernel_size=1, groups=groups, bias=True)
+        self.act  = nn.ReLU()
+        self.gate = nn.Sigmoid()
+
+        # Initialise fc2 to near-zero so at the start of fine-tuning
+        # the GroupSE is approximately an identity (gate ~= 0.5 -> scale ~= 0.5).
+        # We compensate by initialising fc2 bias to 1.0 so gate(0+1)~=0.73,
+        # which is still close to 1 for fast warm-up convergence.
+        nn.init.zeros_(self.fc2.weight)
+        nn.init.ones_(self.fc2.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: [B, C, H, W]
+        # Global average pool per group
+        scale = x.mean(dim=[2, 3], keepdim=True)   # [B, C, 1, 1]
+        scale = self.act(self.fc1(scale))            # [B, reduced*G, 1, 1]
+        scale = self.gate(self.fc2(scale))           # [B, C, 1, 1]
+        return x * scale
+
 class LSConv(nn.Module):
-    def __init__(self, dim):
+    def __init__(self, dim,
+                 group_se: bool = False,
+                 groups: int = 8):
         super(LSConv, self).__init__()
-        self.lkp = LKP(dim, lks=7, sks=3, groups=8)
-        self.ska = SKA()
-        self.bn = nn.BatchNorm2d(dim)
+        self.lkp     = LKP(dim, lks=7, sks=3, groups=groups)
+        self.ska     = SKA()
+        self.group_se = GroupSE(dim, groups=groups) if group_se else nn.Identity()
+        self.bn      = nn.BatchNorm2d(dim)
 
     def forward(self, x):
-        return self.bn(self.ska(x, self.lkp(x))) + x
+        out = self.ska(x, self.lkp(x))
+        out = self.group_se(out)    # applied before BN
+        return self.bn(out) + x
 
 class Block(torch.nn.Module):    
     def __init__(self,
                  ed, kd, nh=8,
                  ar=4,
                  resolution=14,
-                 stage=-1, depth=-1):
+                 stage=-1, depth=-1,
+                 group_se: bool = False,  # NEW (P7)
+                 groups: int = 8):        # NEW (P7)
         super().__init__()
             
         if depth % 2 == 0:
@@ -221,7 +273,9 @@ class Block(torch.nn.Module):
             if stage == 3:
                 self.mixer = Residual(Attention(ed, kd, nh, ar, resolution=resolution))
             else:
-                self.mixer = LSConv(ed)
+                self.mixer = LSConv(ed,
+                                    group_se=group_se,
+                                    groups=groups)
 
         self.ffn = Residual(FFN(ed, int(ed * 2)))
 
@@ -237,7 +291,8 @@ class LSNet(torch.nn.Module):
                  key_dim=[16, 16, 16, 16],
                  depth=[1, 2, 3, 4],
                  num_heads=[4, 4, 4, 4],
-                 distillation=False,):
+                 distillation=False,
+                 **kwargs):  # accepts group_se, groups for Block construction
         super().__init__()
 
         resolution = img_size
@@ -257,7 +312,10 @@ class LSNet(torch.nn.Module):
         for i, (ed, kd, dpth, nh, ar) in enumerate(
                 zip(embed_dim, key_dim, depth, num_heads, attn_ratio)):
             for d in range(dpth):
-                blocks[i].append(Block(ed, kd, nh, ar, resolution, stage=i, depth=d))
+                blocks[i].append(Block(ed, kd, nh, ar, resolution,
+                                       stage=i, depth=d,
+                                       group_se=kwargs.get('group_se', False),
+                                       groups=kwargs.get('groups', 8)))
             
             if i != len(depth) - 1:
                 blk = blocks[i+1]
@@ -356,7 +414,8 @@ def _create_lsnet(variant, pretrained=False, **kwargs):
     return model
 
 @register_model
-def lsnet_t(num_classes=1000, distillation=False, pretrained=False, **kwargs):
+def lsnet_t(num_classes=1000, distillation=False, pretrained=False,
+           group_se=False, **kwargs):  # NEW (P7)
     model = _create_lsnet("lsnet_t" + ("_distill" if distillation else ""),
                   pretrained=pretrained,
                   num_classes=num_classes, 
@@ -366,7 +425,8 @@ def lsnet_t(num_classes=1000, distillation=False, pretrained=False, **kwargs):
                   embed_dim=[64, 128, 256, 384],
                   depth=[0, 2, 8, 10],
                   num_heads=[3, 3, 3, 4],
-                  )
+                  group_se=group_se,   # NEW (P7)
+                  **kwargs)
     return model
 
 @register_model

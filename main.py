@@ -102,6 +102,10 @@ def get_args_parser():
 
     # Augmentation parameters
     parser.add_argument('--ThreeAugment', action='store_true')
+    parser.add_argument('--sparse-ska', action='store_true')
+    parser.add_argument('--sparse-top-k', default=5, type=int)
+    parser.add_argument('--group-se', action='store_true',
+                        help='Enable per-group Squeeze-and-Excite in LSConv (Proposal 7)')
     parser.add_argument('--color-jitter', type=float, default=0.4, metavar='PCT',
                         help='Color jitter factor (default: 0.4)')
     parser.add_argument('--aa', type=str, default='rand-m9-mstd0.5-inc1', metavar='NAME',
@@ -203,6 +207,8 @@ def get_args_parser():
     parser.add_argument('--ina_path', type=str, default=None)
     parser.add_argument('--inr_path', type=str, default=None)
     parser.add_argument('--insk_path', type=str, default=None)
+    parser.add_argument('--dataset-fraction', type=float, default=1.0,
+                        help='fraction of dataset to use (default: 1.0)')
     return parser
 
 try:
@@ -382,6 +388,7 @@ def main(args):
         args.model,
         num_classes=args.nb_classes,
         distillation=(args.distillation_type != 'none'),
+        group_se=args.group_se,
     )
 
     if args.finetune:
