@@ -65,7 +65,7 @@ from PIL import Image
 
 
 class KaggleImageNetDataset(Dataset):
-    def __init__(self, roots, transform=None):
+    def __init__(self, roots, transform=None, fraction: float = 1.0):
         self.transform = transform
         self.samples = []
 
@@ -97,6 +97,13 @@ class KaggleImageNetDataset(Dataset):
                             label
                         )
                     )
+
+        # Apply dataset fraction (training-set subsampling)
+        if fraction < 1.0:
+            import random
+            rng = random.Random(42)  # fixed seed for reproducibility
+            k = max(1, int(len(self.samples) * fraction))
+            self.samples = rng.sample(self.samples, k)
 
     def __len__(self):
         return len(self.samples)
@@ -144,6 +151,9 @@ def build_dataset(is_train, args):
 
         if "/kaggle/input/datasets/sautkin" in args.data_path:
 
+            # Read fraction from args (defaults to 1.0 if attribute absent)
+            fraction = getattr(args, 'dataset_fraction', 1.0)
+
             if is_train:
 
                 dataset = KaggleImageNetDataset(
@@ -153,7 +163,8 @@ def build_dataset(is_train, args):
                         "/kaggle/input/datasets/sautkin/imagenet1k2",
                         "/kaggle/input/datasets/sautkin/imagenet1k3",
                     ],
-                    transform=transform
+                    transform=transform,
+                    fraction=fraction,  # subsampling applied to train only
                 )
 
             else:
@@ -163,6 +174,7 @@ def build_dataset(is_train, args):
                         "/kaggle/input/datasets/sautkin/imagenet1kvalid"
                     ],
                     transform=transform
+                    # fraction is NOT applied to validation set
                 )
 
         else:

@@ -187,3 +187,31 @@ class SkaFn(Function):
 class SKA(torch.nn.Module):
     def forward(self, x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
         return SkaFn.apply(x, w) # type: ignore
+
+
+class ShiftedSKA(torch.nn.Module):
+    """
+    Applies a cyclic spatial shift before SKA and reverses it after.
+    shift_size: tuple (shift_h, shift_w). Default (1, 1) for KS=3.
+    Adds zero new parameters — uses PyTorchSkaFn internally via SkaFn.
+    """
+    def __init__(self, shift_size: tuple = (1, 1)):
+        super().__init__()
+        self.shift_h, self.shift_w = shift_size
+
+    def forward(self, x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
+        # Cyclic shift on the feature map (H=dim2, W=dim3)
+        x_shifted = torch.roll(x,
+                               shifts=(-self.shift_h, -self.shift_w),
+                               dims=(2, 3))
+        # w has shape [B, C//G, KS*KS, H, W]; spatial dims are 3 and 4
+        w_shifted = torch.roll(w,
+                               shifts=(-self.shift_h, -self.shift_w),
+                               dims=(3, 4))
+        # Standard SKA on the shifted tensors
+        out_shifted = SkaFn.apply(x_shifted, w_shifted)
+        # Reverse the cyclic shift on the output
+        out = torch.roll(out_shifted,
+                         shifts=(self.shift_h, self.shift_w),
+                         dims=(2, 3))
+        return out

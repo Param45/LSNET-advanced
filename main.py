@@ -102,6 +102,21 @@ def get_args_parser():
 
     # Augmentation parameters
     parser.add_argument('--ThreeAugment', action='store_true')
+
+    # Proposal flags -------------------------------------------------------
+    parser.add_argument('--sparse-ska', action='store_true', default=False,
+                        help='Enable sparse dynamic aggregation in SKA (Proposal 3)')
+    parser.add_argument('--sparse-top-k', type=int, default=5, metavar='SPARSE_TOP_K',
+                        help='Number of kernel positions to keep in sparse SKA (default: 5)')
+    parser.add_argument('--group-se', action='store_true', default=False,
+                        help='Enable per-group Squeeze-and-Excite in LSConv (Proposal 7)')
+    parser.add_argument('--use-shifted-ska', action='store_true', default=False,
+                        help='Enable shifted-window SKA in alternating LSConv blocks (Proposal 8)')
+    # Dataset fraction (40% subset support)
+    parser.add_argument('--dataset-fraction', type=float, default=1.0,
+                        help='fraction of dataset to use (default: 1.0)')
+    # ----------------------------------------------------------------------
+
     parser.add_argument('--color-jitter', type=float, default=0.4, metavar='PCT',
                         help='Color jitter factor (default: 0.4)')
     parser.add_argument('--aa', type=str, default='rand-m9-mstd0.5-inc1', metavar='NAME',
@@ -382,6 +397,10 @@ def main(args):
         args.model,
         num_classes=args.nb_classes,
         distillation=(args.distillation_type != 'none'),
+        sparse_ska=args.sparse_ska,
+        sparse_top_k=args.sparse_top_k,
+        group_se=args.group_se,
+        use_shifted_ska=args.use_shifted_ska,
     )
 
     if args.finetune:

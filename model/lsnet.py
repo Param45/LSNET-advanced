@@ -4,7 +4,7 @@ import itertools
 from timm.models.vision_transformer import trunc_normal_
 from timm.models.layers import SqueezeExcite
 from timm.models.registry import register_model
-from .ska import SKA
+from .ska import SKA, ShiftedSKA
 
 from timm.models.helpers import build_model_with_cfg
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
@@ -195,24 +195,76 @@ class LKP(nn.Module):
         w = w.view(b, self.dim // self.groups, self.sks ** 2, h, width)
         return w
 
+
+class GroupSE(nn.Module):
+    """
+    Per-group Squeeze-and-Excite (Proposal 7).
+    Splits channels into G groups, applies independent SE per group,
+    then concatenates back. Squeeze ratio fixed at 4.
+    """
+    def __init__(self, dim: int, groups: int = 8):
+        super().__init__()
+        assert dim % groups == 0, \
+            f"dim ({dim}) must be divisible by groups ({groups})"
+        self.groups = groups
+        self.channels_per_group = dim // groups
+        reduced = max(1, self.channels_per_group // 4)  # squeeze ratio 4
+
+        # Grouped 1x1 convs process all groups in parallel
+        self.fc1 = nn.Conv2d(dim, reduced * groups,
+                             kernel_size=1, groups=groups, bias=True)
+        self.fc2 = nn.Conv2d(reduced * groups, dim,
+                             kernel_size=1, groups=groups, bias=True)
+        self.act  = nn.ReLU()
+        self.gate = nn.Sigmoid()
+
+        # Initialise fc2 near-zero so gate starts close to identity
+        nn.init.zeros_(self.fc2.weight)
+        nn.init.ones_(self.fc2.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        scale = x.mean(dim=[2, 3], keepdim=True)   # [B, C, 1, 1]
+        scale = self.act(self.fc1(scale))            # [B, reduced*G, 1, 1]
+        scale = self.gate(self.fc2(scale))           # [B, C, 1, 1]
+        return x * scale
+
+
 class LSConv(nn.Module):
-    def __init__(self, dim):
+    def __init__(self, dim,
+                 sparse_ska: bool = False,
+                 sparse_top_k: int = 5,
+                 group_se: bool = False,
+                 groups: int = 8,
+                 shifted: bool = False,
+                 shift_size: tuple = (1, 1)):
         super(LSConv, self).__init__()
-        self.lkp = LKP(dim, lks=7, sks=3, groups=8)
-        self.ska = SKA()
+        self.lkp = LKP(dim, lks=7, sks=3, groups=groups)
+
+        if shifted:
+            self.ska = ShiftedSKA(shift_size=shift_size)
+        else:
+            self.ska = SKA()
+
+        self.group_se = GroupSE(dim, groups=groups) if group_se else nn.Identity()
         self.bn = nn.BatchNorm2d(dim)
 
     def forward(self, x):
-        return self.bn(self.ska(x, self.lkp(x))) + x
+        out = self.ska(x, self.lkp(x))
+        out = self.group_se(out)    # applied before BN
+        return self.bn(out) + x
 
-class Block(torch.nn.Module):    
+class Block(torch.nn.Module):
     def __init__(self,
                  ed, kd, nh=8,
                  ar=4,
                  resolution=14,
-                 stage=-1, depth=-1):
+                 stage=-1, depth=-1,
+                 sparse_ska: bool = False,
+                 sparse_top_k: int = 5,
+                 group_se: bool = False,
+                 use_shifted_ska: bool = False):  # P8 master switch
         super().__init__()
-            
+
         if depth % 2 == 0:
             self.mixer = RepVGGDW(ed)
             self.se = SqueezeExcite(ed, 0.25)
@@ -221,7 +273,17 @@ class Block(torch.nn.Module):
             if stage == 3:
                 self.mixer = Residual(Attention(ed, kd, nh, ar, resolution=resolution))
             else:
-                self.mixer = LSConv(ed)
+                # P8: alternate regular / shifted — depths 1,5,9,... regular; 3,7,11,... shifted
+                is_shifted = use_shifted_ska and (depth % 4 == 3)
+                self.mixer = LSConv(
+                    ed,
+                    sparse_ska=sparse_ska,
+                    sparse_top_k=sparse_top_k,
+                    group_se=group_se,
+                    groups=8,
+                    shifted=is_shifted,
+                    shift_size=(1, 1),
+                )
 
         self.ffn = Residual(FFN(ed, int(ed * 2)))
 
@@ -237,7 +299,8 @@ class LSNet(torch.nn.Module):
                  key_dim=[16, 16, 16, 16],
                  depth=[1, 2, 3, 4],
                  num_heads=[4, 4, 4, 4],
-                 distillation=False,):
+                 distillation=False,
+                 **kwargs):
         super().__init__()
 
         resolution = img_size
@@ -257,7 +320,12 @@ class LSNet(torch.nn.Module):
         for i, (ed, kd, dpth, nh, ar) in enumerate(
                 zip(embed_dim, key_dim, depth, num_heads, attn_ratio)):
             for d in range(dpth):
-                blocks[i].append(Block(ed, kd, nh, ar, resolution, stage=i, depth=d))
+                blocks[i].append(Block(ed, kd, nh, ar, resolution,
+                                       stage=i, depth=d,
+                                       sparse_ska=kwargs.get('sparse_ska', False),
+                                       sparse_top_k=kwargs.get('sparse_top_k', 5),
+                                       group_se=kwargs.get('group_se', False),
+                                       use_shifted_ska=kwargs.get('use_shifted_ska', False)))
             
             if i != len(depth) - 1:
                 blk = blocks[i+1]
@@ -356,17 +424,24 @@ def _create_lsnet(variant, pretrained=False, **kwargs):
     return model
 
 @register_model
-def lsnet_t(num_classes=1000, distillation=False, pretrained=False, **kwargs):
+def lsnet_t(num_classes=1000, distillation=False, pretrained=False,
+            sparse_ska=False, sparse_top_k=5,
+            group_se=False,
+            use_shifted_ska=False, **kwargs):
     model = _create_lsnet("lsnet_t" + ("_distill" if distillation else ""),
                   pretrained=pretrained,
-                  num_classes=num_classes, 
-                  distillation=distillation, 
+                  num_classes=num_classes,
+                  distillation=distillation,
                   img_size=224,
                   patch_size=8,
                   embed_dim=[64, 128, 256, 384],
                   depth=[0, 2, 8, 10],
                   num_heads=[3, 3, 3, 4],
-                  )
+                  sparse_ska=sparse_ska,
+                  sparse_top_k=sparse_top_k,
+                  group_se=group_se,
+                  use_shifted_ska=use_shifted_ska,
+                  **kwargs)
     return model
 
 @register_model
