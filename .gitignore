@@ -140,6 +140,5 @@ cython_debug/
 **/checkpoints
 
 wandb
-pretrain
 *.whl
 ignore
